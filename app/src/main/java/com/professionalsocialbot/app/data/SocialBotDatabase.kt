@@ -76,7 +76,8 @@ object BrewAlgorithmScorer {
     fun calculateScore(post: SocialPostEntity): Int {
         var score = 55
         val firstLine = post.captionText.lineSequence().firstOrNull() ?: ""
-        val firstLineWords = firstLine.trim().split("\s+".toRegex()).size
+        // Properly escaped backslash for regex whitespace matching
+        val firstLineWords = firstLine.trim().split("\\s+".toRegex()).size
 
         if (firstLineWords in 4..14) score += 15
         if (!post.captionText.contains("http://") && !post.captionText.contains("https://")) score += 10
