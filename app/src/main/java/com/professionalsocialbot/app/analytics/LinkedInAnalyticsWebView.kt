@@ -42,7 +42,8 @@ fun HiddenLinkedInAnalyticsExtractor(
 
                         view?.evaluateJavascript(jsScraper) { resultJson ->
                             try {
-                                val clean = resultJson.trim('"').replace("\\\\"", """)
+                                // Clean string using raw multi-line quotes to prevent escape parsing errors
+                                val clean = resultJson.trim('"').replace("\\\"", "\"")
                                 val obj = org.json.JSONObject(clean)
                                 onStatsExtracted(
                                     obj.optInt("impressions", 840),
