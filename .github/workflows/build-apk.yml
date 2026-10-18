@@ -22,7 +22,11 @@ jobs:
       - name: 3. Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: 4. Compile Debug APK using Gradle Build Action
-        uses: gradle/actions/setup-gradle@v4
+      - name: 4. Compile Debug APK
+        run: gradle assembleDebug --stacktrace
+
+      - name: 5. Upload Installable APK (Direct Download)
+        uses: actions/upload-artifact@v7
         with:
-          arguments: assembleDebug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          archive: false
