@@ -3,7 +3,7 @@ name: Build Professional Social Bot APK
 on:
   push:
     branches: [ "main", "master" ]
-  workflow_dispatch: # Lets you trigger a build anytime with 1 click
+  workflow_dispatch:
 
 jobs:
   build-android-apk:
@@ -19,16 +19,10 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: 3. Install Gradle 8.9 (No Wrapper Needed)
+      - name: 3. Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: 4. Compile Debug APK using Gradle Build Action
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
-
-      - name: 4. Compile Debug APK
-        run: gradle assembleDebug --stacktrace
-
-      - name: 5. Upload Installable APK (Direct Un-Zipped Download)
-        uses: actions/upload-artifact@v7
-        with:
-          path: app/build/outputs/apk/debug/app-debug.apk
-          archive: false
+          arguments: assembleDebug
