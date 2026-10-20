@@ -49,6 +49,9 @@ interface SocialPostDao {
     @Update
     suspend fun updatePost(post: SocialPostEntity)
 
+    @Delete
+    suspend fun deletePost(post: SocialPostEntity)
+
     @Query("UPDATE social_posts SET impressions = :impressions, likes = :likes, comments = :comments, saves = :saves, velocityStatus = :velocity WHERE id = :postId")
     suspend fun updateAnalytics(postId: Int, impressions: Int, likes: Int, comments: Int, saves: Int, velocity: String)
 }
@@ -76,7 +79,6 @@ object BrewAlgorithmScorer {
     fun calculateScore(post: SocialPostEntity): Int {
         var score = 55
         val firstLine = post.captionText.lineSequence().firstOrNull() ?: ""
-        // Properly escaped backslash for regex whitespace matching
         val firstLineWords = firstLine.trim().split("\\s+".toRegex()).size
 
         if (firstLineWords in 4..14) score += 15

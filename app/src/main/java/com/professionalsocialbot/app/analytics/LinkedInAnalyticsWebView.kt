@@ -25,7 +25,7 @@ fun HiddenLinkedInAnalyticsExtractor(
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView?, url: String?) {
                         super.onPageFinished(view, url)
-                        val jsScraper = """
+                        val jsScraper = \"\"\"
                             (function() {
                                 const text = document.body.innerText;
                                 const impMatch = text.match(/([0-9,]+)\s+Impressions/i);
@@ -38,11 +38,10 @@ fun HiddenLinkedInAnalyticsExtractor(
                                     saves: 24
                                 });
                             })();
-                        """.trimIndent()
+                        \"\"\".trimIndent()
 
                         view?.evaluateJavascript(jsScraper) { resultJson ->
                             try {
-                                // Clean string using raw multi-line quotes to prevent escape parsing errors
                                 val clean = resultJson.trim('"').replace("\\\"", "\"")
                                 val obj = org.json.JSONObject(clean)
                                 onStatsExtracted(

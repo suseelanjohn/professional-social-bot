@@ -1,7 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose") version "2.0.20"
+    id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
 }
 
@@ -13,8 +13,8 @@ android {
         applicationId = "com.professionalsocialbot.app"
         minSdk = 28
         targetSdk = 35
-        versionCode = 1
-        versionName = "2026.1.0"
+        versionCode = 2
+        versionName = "2026.2.0"
     }
 
     buildFeatures {
