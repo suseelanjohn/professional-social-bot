@@ -7,6 +7,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.viewinterop.AndroidView
+import org.json.JSONObject
+import org.json.JSONTokener
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -25,25 +27,23 @@ fun HiddenLinkedInAnalyticsExtractor(
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView?, url: String?) {
                         super.onPageFinished(view, url)
-                        val jsScraper = \"\"\"
-                            (function() {
-                                const text = document.body.innerText;
-                                const impMatch = text.match(/([0-9,]+)\s+Impressions/i);
-                                const reactMatch = text.match(/([0-9,]+)\s+Reactions/i);
-                                const commMatch = text.match(/([0-9,]+)\s+Comments/i);
-                                return JSON.stringify({
-                                    impressions: impMatch ? parseInt(impMatch[1].replace(/,/g, '')) : 840,
-                                    likes: reactMatch ? parseInt(reactMatch[1].replace(/,/g, '')) : 38,
-                                    comments: commMatch ? parseInt(commMatch[1].replace(/,/g, '')) : 11,
-                                    saves: 24
-                                });
-                            })();
-                        \"\"\".trimIndent()
+                        val jsScraper = "(function() {" +
+                            "var text = document.body ? document.body.innerText : '';" +
+                            "var imp = text.match(/([0-9,]+)\\s+Impressions/i);" +
+                            "var react = text.match(/([0-9,]+)\\s+Reactions/i);" +
+                            "var comm = text.match(/([0-9,]+)\\s+Comments/i);" +
+                            "return JSON.stringify({" +
+                            "impressions: imp ? parseInt(imp[1].replace(/,/g, '')) : 840," +
+                            "likes: react ? parseInt(react[1].replace(/,/g, '')) : 38," +
+                            "comments: comm ? parseInt(comm[1].replace(/,/g, '')) : 11," +
+                            "saves: 24" +
+                            "});" +
+                            "})();"
 
                         view?.evaluateJavascript(jsScraper) { resultJson ->
                             try {
-                                val clean = resultJson.trim('"').replace("\\\"", "\"")
-                                val obj = org.json.JSONObject(clean)
+                                val unwrapped = JSONTokener(resultJson).nextValue().toString()
+                                val obj = JSONObject(unwrapped)
                                 onStatsExtracted(
                                     obj.optInt("impressions", 840),
                                     obj.optInt("likes", 38),
