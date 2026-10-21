@@ -10,15 +10,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +29,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.documentfile.provider.DocumentFile
@@ -61,7 +58,7 @@ class MainActivity : ComponentActivity() {
                 var showSplash by remember { mutableStateOf(true) }
 
                 LaunchedEffect(Unit) {
-                    delay(1600) // 1.6s Cinematic Splash Screen
+                    delay(1600)
                     showSplash = false
                 }
 
@@ -69,7 +66,7 @@ class MainActivity : ComponentActivity() {
                     if (showSplash) {
                         CinematicSplashScreen()
                     } else {
-                        ProfessionalSocialBotScreen(database.postDao())
+                        MainAppNavigation(database.postDao())
                     }
                 }
             }
@@ -131,31 +128,39 @@ fun CinematicSplashScreen() {
     }
 }
 
+@Composable
+fun MainAppNavigation(dao: SocialPostDao) {
+    var currentScreen by remember { mutableStateOf("dashboard") }
+
+    if (currentScreen == "dashboard") {
+        ProfessionalSocialBotScreen(
+            dao = dao,
+            onOpenSettings = { currentScreen = "settings" }
+        )
+    } else {
+        SettingsScreen(
+            onBack = { currentScreen = "dashboard" }
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProfessionalSocialBotScreen(dao: SocialPostDao) {
+fun ProfessionalSocialBotScreen(dao: SocialPostDao, onOpenSettings: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("bot_prefs", Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
     val allPosts by dao.getAllPostsFlow().collectAsState(initial = emptyList())
 
-    // 1. PERSISTENT FOLDER & SCHEDULE STATE (Loaded from SharedPreferences so it NEVER resets!)
     var selectedFolder by remember {
         mutableStateOf(prefs.getString("folder_display_name", "Tap 'Pick Folder' to select") ?: "Tap 'Pick Folder' to select")
     }
-    var scanTime by remember {
-        mutableStateOf(prefs.getString("scan_time", "20:00") ?: "20:00")
-    }
-    var publishTime by remember {
-        mutableStateOf(prefs.getString("publish_time", "09:30") ?: "09:30")
-    }
-    var analyticsSyncTime by remember {
-        mutableStateOf(prefs.getString("sync_time", "21:00") ?: "21:00")
-    }
+    var scanTime by remember { mutableStateOf(prefs.getString("scan_time", "20:00") ?: "20:00") }
+    var publishTime by remember { mutableStateOf(prefs.getString("publish_time", "09:30") ?: "09:30") }
+    var analyticsSyncTime by remember { mutableStateOf(prefs.getString("sync_time", "21:00") ?: "21:00") }
     var isScanningNow by remember { mutableStateOf(false) }
     var triggerWebViewSync by remember { mutableStateOf(false) }
 
-    // Helper to open Android's native Clock TimePickerDialog
     fun openTimePicker(currentValue: String, prefKey: String, onTimeSelected: (String) -> Unit) {
         val parts = currentValue.split(":")
         val currentHour = parts.getOrNull(0)?.toIntOrNull() ?: 20
@@ -171,11 +176,10 @@ fun ProfessionalSocialBotScreen(dao: SocialPostDao) {
             },
             currentHour,
             currentMinute,
-            true // 24-hour clock format
+            true
         ).show()
     }
 
-    // Android SAF Folder Picker Launcher (Saves URI & Display Name permanently)
     val folderPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { uri: Uri? ->
@@ -196,7 +200,6 @@ fun ProfessionalSocialBotScreen(dao: SocialPostDao) {
         }
     }
 
-    // Seed 1 sample draft ONLY on the very first install so it doesn't duplicate on reopen
     LaunchedEffect(Unit) {
         val alreadySeeded = prefs.getBoolean("demo_seeded", false)
         if (!alreadySeeded) {
@@ -207,7 +210,7 @@ fun ProfessionalSocialBotScreen(dao: SocialPostDao) {
                     mimeType = "application/pdf",
                     totalPdfPages = 9,
                     trimPagesToFive = true,
-                    captionText = "Most teams miss Section 4 of the updated compliance framework.\n\nAfter reviewing the latest circular, three practical shifts stand out:\n1. Mandatory digital timelines cut delays by 40%.\n2. Direct verification replaces manual filings.\n3. Early audit logs prevent statutory penalties.\n\nSwipe through the attached 5-slide brief for the full breakdown.\n\n#Compliance #Governance #LegalTech",
+                    captionText = "Most teams miss Section 4 of the updated compliance framework.\n\nAfter reviewing the document, three practical takeaways stand out:\n1. Mandatory digital timelines cut delays by 40%.\n2. Direct verification replaces manual filings.\n3. Early audit logs prevent statutory penalties.\n\n#Compliance #Governance #LegalTech",
                     status = PostStatus.PENDING_APPROVAL
                 )
             )
@@ -215,9 +218,10 @@ fun ProfessionalSocialBotScreen(dao: SocialPostDao) {
         }
     }
 
-    // Instant "RUN NOW" Folder Scanner Function
     fun runFolderScanImmediately() {
         val savedUriStr = prefs.getString("folder_uri", null)
+        val apiKey = prefs.getString("gemini_api_key", "").orEmpty()
+
         if (savedUriStr == null) {
             Toast.makeText(context, "Please tap 'Pick Folder' first!", Toast.LENGTH_LONG).show()
             return
@@ -234,7 +238,25 @@ fun ProfessionalSocialBotScreen(dao: SocialPostDao) {
                         val name = file.name ?: continue
                         if (file.isDirectory || dao.isFileAlreadyProcessed(name)) continue
 
-                        val cleanName = name.substringBeforeLast(".").replace("_", " ")
+                        // Read actual file content for AI analysis
+                        val contentText = try {
+                            context.contentResolver.openInputStream(file.uri)?.bufferedReader()?.use { it.readText().take(1500) } ?: "File ready."
+                        } catch (e: Exception) {
+                            "Content binary ready."
+                        }
+
+                        val draftedCaption = if (apiKey.isNotBlank()) {
+                            try {
+                                val model = com.google.ai.client.generativeai.GenerativeModel("gemini-2.5-flash", apiKey)
+                                val prompt = "Read this document content from '$name':\n$contentText\nWrite a 700-char LinkedIn post with a 12-word hook, 3 numbered takeaways, and 3 hashtags."
+                                model.generateContent(prompt).text?.trim() ?: "Key insights from $name."
+                            } catch (e: Exception) {
+                                "Insights from $name."
+                            }
+                        } else {
+                            "Analyzed content from $name:\n\n1. Review of core clauses.\n2. Practical implementation steps.\n3. Swipe attached document for full details.\n\n#Professional #Analysis"
+                        }
+
                         dao.insertPost(
                             SocialPostEntity(
                                 fileName = name,
@@ -242,7 +264,7 @@ fun ProfessionalSocialBotScreen(dao: SocialPostDao) {
                                 mimeType = file.type ?: "application/pdf",
                                 totalPdfPages = 7,
                                 trimPagesToFive = true,
-                                captionText = "Most practitioners overlook the key shift inside $cleanName.\n\nAfter analyzing this document, three practical takeaways stand out:\n1. Streamlined compliance timelines cut procedural delays by 40%.\n2. Direct digital records replace manual verification.\n3. Early audit readiness protects teams.\n\nSwipe through the attached 5-slide summary for the full breakdown.\n\n#Insights #ProfessionalUpdate #Strategy",
+                                captionText = draftedCaption,
                                 status = PostStatus.PENDING_APPROVAL
                             )
                         )
@@ -254,9 +276,9 @@ fun ProfessionalSocialBotScreen(dao: SocialPostDao) {
             delay(500)
             isScanningNow = false
             if (newFilesFound > 0) {
-                Toast.makeText(context, "⚡ Found & analyzed $newFilesFound new file(s)!", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "⚡ Analyzed content & drafted $newFilesFound post(s)!", Toast.LENGTH_LONG).show()
             } else {
-                Toast.makeText(context, "Folder scanned: No new unprocessed files found.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Folder scanned: No new unprocessed files.", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -282,13 +304,16 @@ fun ProfessionalSocialBotScreen(dao: SocialPostDao) {
                     }
                 },
                 actions = {
+                    IconButton(onClick = { onOpenSettings() }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
+                    }
                     FilledTonalButton(
                         onClick = { folderPickerLauncher.launch(null) },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                     ) {
                         Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Pick Folder", fontSize = 12.sp)
+                        Spacer(Modifier.width(4.dp))
+                        Text("Folder", fontSize = 12.sp)
                     }
                 }
             )
@@ -301,7 +326,6 @@ fun ProfessionalSocialBotScreen(dao: SocialPostDao) {
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 1. PERSISTENT FOLDER + INTERACTIVE SCHEDULE PICKERS + RUN NOW BUTTON
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF151C28)),
@@ -309,7 +333,6 @@ fun ProfessionalSocialBotScreen(dao: SocialPostDao) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        // Folder Row + Instant "Run Now" Button
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
@@ -325,11 +348,7 @@ fun ProfessionalSocialBotScreen(dao: SocialPostDao) {
                                         color = Color.White,
                                         fontWeight = FontWeight.SemiBold
                                     )
-                                    Text(
-                                        "Saved permanently • Tap 'Pick Folder' to change",
-                                        fontSize = 10.sp,
-                                        color = Color(0xFF94A3B8)
-                                    )
+                                    Text("Saved permanently • Tap Folder to change", fontSize = 10.sp, color = Color(0xFF94A3B8))
                                 }
                             }
                             Button(
@@ -339,69 +358,43 @@ fun ProfessionalSocialBotScreen(dao: SocialPostDao) {
                                 shape = RoundedCornerShape(12.dp)
                             ) {
                                 if (isScanningNow) {
-                                    CircularProgressIndicator(
-                                        color = Color.White,
-                                        strokeWidth = 2.dp,
-                                        modifier = Modifier.size(14.dp)
-                                    )
+                                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(14.dp))
                                 } else {
                                     Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(16.dp))
                                 }
                                 Spacer(Modifier.width(4.dp))
-                                Text(if (isScanningNow) "Scanning..." else "Run Now", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text(if (isScanningNow) "Analyzing..." else "Run Now", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                         }
 
-                        // Interactive Time Picker Pills
-                        Text(
-                            "TAP ANY SCHEDULE BELOW TO SET TIME:",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF818CF8)
-                        )
+                        Text("TAP ANY SCHEDULE BELOW TO SET TIME:", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF818CF8))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            SchedulePickerCard(
-                                modifier = Modifier.weight(1f),
-                                label = "Scan Folder",
-                                time = scanTime,
-                                onClick = {
-                                    openTimePicker(scanTime, "scan_time") { newTime ->
-                                        scanTime = newTime
-                                        BotScheduleManager.scheduleDailyWork(context, "daily_folder_scan", newTime, true)
-                                    }
+                            SchedulePickerCard(Modifier.weight(1f), "Scan Folder", scanTime) {
+                                openTimePicker(scanTime, "scan_time") { newTime ->
+                                    scanTime = newTime
+                                    BotScheduleManager.scheduleDailyWork(context, "daily_folder_scan", newTime, true)
                                 }
-                            )
-                            SchedulePickerCard(
-                                modifier = Modifier.weight(1f),
-                                label = "Auto-Post",
-                                time = publishTime,
-                                onClick = {
-                                    openTimePicker(publishTime, "publish_time") { newTime ->
-                                        publishTime = newTime
-                                        BotScheduleManager.scheduleDailyWork(context, "daily_linkedin_post", newTime, false)
-                                    }
+                            }
+                            SchedulePickerCard(Modifier.weight(1f), "Auto-Post", publishTime) {
+                                openTimePicker(publishTime, "publish_time") { newTime ->
+                                    publishTime = newTime
+                                    BotScheduleManager.scheduleDailyWork(context, "daily_linkedin_post", newTime, false)
                                 }
-                            )
-                            SchedulePickerCard(
-                                modifier = Modifier.weight(1f),
-                                label = "Sync Views",
-                                time = analyticsSyncTime,
-                                onClick = {
-                                    openTimePicker(analyticsSyncTime, "sync_time") { newTime ->
-                                        analyticsSyncTime = newTime
-                                        triggerWebViewSync = true
-                                    }
+                            }
+                            SchedulePickerCard(Modifier.weight(1f), "Sync Views", analyticsSyncTime) {
+                                openTimePicker(analyticsSyncTime, "sync_time") { newTime ->
+                                    analyticsSyncTime = newTime
+                                    triggerWebViewSync = true
                                 }
-                            )
+                            }
                         }
                     }
                 }
             }
 
-            // 2. HUMAN-IN-THE-LOOP APPROVAL & EDIT DECK
             item {
                 Text(
                     "PENDING YOUR APPROVAL (${pendingDrafts.size})",
@@ -436,7 +429,6 @@ fun ProfessionalSocialBotScreen(dao: SocialPostDao) {
                 )
             }
 
-            // 3. LIVE ANALYTICS BENTO GRID
             item {
                 Text(
                     "LIVE ANALYTICS BENTO GRID",
@@ -467,6 +459,97 @@ fun ProfessionalSocialBotScreen(dao: SocialPostDao) {
             scope.launch {
                 publishedPosts.firstOrNull()?.let { latest ->
                     dao.updateAnalytics(latest.id, imp, likes, comm, saves, "HIGH 🔥")
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("bot_prefs", Context.MODE_PRIVATE) }
+
+    var geminiKey by remember { mutableStateOf(prefs.getString("gemini_api_key", "").orEmpty()) }
+    var linkedInToken by remember { mutableStateOf(prefs.getString("linkedin_token", "").orEmpty()) }
+    var authorUrn by remember { mutableStateOf(prefs.getString("linkedin_author_urn", "").orEmpty()) }
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF0B0F17)),
+                title = { Text("Settings & Credentials", fontWeight = FontWeight.Bold, color = Color.White) },
+                navigationIcon = {
+                    IconButton(onClick = { onBack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF151C28)),
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text("API & Account Credentials", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF6366F1))
+                    
+                    OutlinedTextField(
+                        value = geminiKey,
+                        onValueChange = { geminiKey = it },
+                        label = { Text("Google Gemini API Key") },
+                        placeholder = { Text("AIzaSy...") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = linkedInToken,
+                        onValueChange = { linkedInToken = it },
+                        label = { Text("LinkedIn OAuth 2.0 Access Token") },
+                        placeholder = { Text("AQV...") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = authorUrn,
+                        onValueChange = { authorUrn = it },
+                        label = { Text("LinkedIn Author URN") },
+                        placeholder = { Text("urn:li:person:abcdef") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    Button(
+                        onClick = {
+                            prefs.edit()
+                                .putString("gemini_api_key", geminiKey.trim())
+                                .putString("linkedin_token", linkedInToken.trim())
+                                .putString("linkedin_author_urn", authorUrn.trim())
+                                .apply()
+                            Toast.makeText(context, "Credentials saved successfully!", Toast.LENGTH_LONG).show()
+                            onBack()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Save, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Save Credentials", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

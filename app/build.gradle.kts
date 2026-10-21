@@ -13,8 +13,8 @@ android {
         applicationId = "com.professionalsocialbot.app"
         minSdk = 28
         targetSdk = 35
-        versionCode = 2
-        versionName = "2026.2.0"
+        versionCode = 3
+        versionName = "2026.3.0"
     }
 
     buildFeatures {

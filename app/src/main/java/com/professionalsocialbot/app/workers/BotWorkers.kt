@@ -11,6 +11,8 @@ import com.professionalsocialbot.app.data.SocialBotDatabase
 import com.professionalsocialbot.app.data.SocialPostEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.time.Duration
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -20,7 +22,7 @@ class FolderScanWorker(context: Context, params: WorkerParameters) : CoroutineWo
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val prefs = applicationContext.getSharedPreferences("bot_prefs", Context.MODE_PRIVATE)
         val folderUriStr = prefs.getString("folder_uri", null) ?: return@withContext Result.success()
-        val geminiApiKey = prefs.getString("gemini_api_key", "") ?: ""
+        val geminiApiKey = prefs.getString("gemini_api_key", "").orEmpty()
 
         val db = SocialBotDatabase.getInstance(applicationContext).postDao()
         val folderUri = Uri.parse(folderUriStr)
@@ -31,8 +33,9 @@ class FolderScanWorker(context: Context, params: WorkerParameters) : CoroutineWo
             val name = file.name ?: continue
             if (file.isDirectory || db.isFileAlreadyProcessed(name)) continue
 
-            val rawSnippet = extractTextPreview(file.uri)
-            val draftedCaption = generate360BrewCaption(name, rawSnippet, geminiApiKey)
+            // Read actual file content text for deep analysis
+            val fileContentText = extractFileTextContent(file.uri)
+            val draftedCaption = generateDeepAIContent(name, fileContentText, geminiApiKey)
 
             db.insertPost(
                 SocialPostEntity(
@@ -46,18 +49,28 @@ class FolderScanWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 )
             )
             scannedCount++
-            if (scannedCount >= 3) break // Scan up to 3 new files per run
+            if (scannedCount >= 3) break
         }
         Result.success()
     }
 
-    private fun extractTextPreview(uri: Uri): String {
+    private fun extractFileTextContent(uri: Uri): String {
         return try {
-            applicationContext.contentResolver.openInputStream(uri)?.bufferedReader()?.use {
-                it.readText().take(2500)
-            } ?: "Document attached for analysis."
+            applicationContext.contentResolver.openInputStream(uri)?.use { inputStream ->
+                BufferedReader(InputStreamReader(inputStream)).use { reader ->
+                    val sb = StringBuilder()
+                    var line: String? = reader.readLine()
+                    var linesRead = 0
+                    while (line != null && linesRead < 150) { // Read up to 150 lines of actual text content
+                        sb.append(line).append("\n")
+                        line = reader.readLine()
+                        linesRead++
+                    }
+                    sb.toString()
+                }
+            }.takeIf { !it.isNullOrBlank() } ?: "Document file read successfully."
         } catch (e: Exception) {
-            "Binary PDF/Image file ready for executive breakdown."
+            "Content binary stream ready for professional breakdown."
         }
     }
 
@@ -71,20 +84,28 @@ class FolderScanWorker(context: Context, params: WorkerParameters) : CoroutineWo
         }
     }
 
-    private suspend fun generate360BrewCaption(fileName: String, content: String, apiKey: String): String {
-        val cleanTitle = fileName.substringBeforeLast(".")
-            .replace("_", " ")
-            .replace("-", " ")
-
+    private suspend fun generateDeepAIContent(fileName: String, fileContent: String, apiKey: String): String {
         if (apiKey.isBlank()) {
-            return "Most practitioners overlook the operational impact inside $cleanTitle.\n\nAfter reviewing the document, three practical takeaways stand out:\n1. Streamlined compliance timelines reduce procedural delays by 40%.\n2. Direct digital verification replaces repetitive manual filings.\n3. Early documentation protects teams during statutory audits.\n\nSwipe through the attached 5-slide brief for the complete breakdown.\n\n#Insights #Compliance #ProfessionalUpdate"
+            return "Analyzed content from $fileName:\n\nKey takeaways:\n1. Core provisions and statutory updates.\n2. Actionable operational compliance steps.\n3. Detailed breakdown available in attached document.\n\n#Professional #Compliance #Analysis"
         }
+
         return try {
             val model = GenerativeModel(modelName = "gemini-2.5-flash", apiKey = apiKey)
-            val prompt = "Analyze this file ($fileName): $content. Write a 750-char LinkedIn post with a concrete 12-word hook, 3 numbered insights, no links, and 3 hashtags."
-            model.generateContent(prompt).text?.trim() ?: "Draft ready for $cleanTitle."
+            val prompt = \"\"\"
+                You are an expert professional content analyst. 
+                Read this document content extracted from '$fileName':
+                ---
+                $fileContent
+                ---
+                Write a high-retention LinkedIn post based strictly on the actual text content above:
+                - Line 1 MUST be a punchy concrete hook under 14 words summarizing the core insight.
+                - Provide 3 distinct numbered takeaways derived from the text.
+                - NO external links.
+                - Maximum 3 hashtags at the bottom.
+            \"\"\".trimIndent()
+            model.generateContent(prompt).text?.trim() ?: "Analyzed content from $fileName."
         } catch (e: Exception) {
-            "Key takeaways extracted from $cleanTitle.\n\n1. Core framework updates highlighted in the attached file.\n2. Actionable timeline adjustments.\n3. Swipe the attached document for full details.\n\n#Update #Analysis"
+            "Insights extracted from $fileName content.\n\n1. Review of core clauses.\n2. Practical implementation notes.\n3. Swipe attached document for full details.\n\n#Insights #Analysis"
         }
     }
 }
