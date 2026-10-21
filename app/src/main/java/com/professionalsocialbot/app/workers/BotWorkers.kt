@@ -84,31 +84,28 @@ class FolderScanWorker(context: Context, params: WorkerParameters) : CoroutineWo
         }
     }
 
-    private suspend fun generateDeepAIContent(fileName: String, fileContent: String, apiKey: String): String {
+  private suspend fun generateDeepAIContent(fileName: String, fileContent: String, apiKey: String): String {
         if (apiKey.isBlank()) {
             return "Analyzed content from $fileName:\n\nKey takeaways:\n1. Core provisions and statutory updates.\n2. Actionable operational compliance steps.\n3. Detailed breakdown available in attached document.\n\n#Professional #Compliance #Analysis"
         }
 
         return try {
             val model = GenerativeModel(modelName = "gemini-2.5-flash", apiKey = apiKey)
-            val prompt = \"\"\"
-                You are an expert professional content analyst. 
-                Read this document content extracted from '$fileName':
-                ---
-                $fileContent
-                ---
-                Write a high-retention LinkedIn post based strictly on the actual text content above:
-                - Line 1 MUST be a punchy concrete hook under 14 words summarizing the core insight.
-                - Provide 3 distinct numbered takeaways derived from the text.
-                - NO external links.
-                - Maximum 3 hashtags at the bottom.
-            \"\"\".trimIndent()
+            // Using clean single-line string concatenation to completely avoid Kotlin parsing / escape token errors
+            val prompt = "You are an expert professional content analyst. " +
+                    "Read this document content extracted from '$fileName': " +
+                    fileContent + " " +
+                    "Write a high-retention LinkedIn post based strictly on the actual text content above: " +
+                    "Line 1 MUST be a punchy concrete hook under 14 words summarizing the core insight. " +
+                    "Provide 3 distinct numbered takeaways derived from the text. " +
+                    "NO external links. " +
+                    "Maximum 3 hashtags at the bottom."
+
             model.generateContent(prompt).text?.trim() ?: "Analyzed content from $fileName."
         } catch (e: Exception) {
             "Insights extracted from $fileName content.\n\n1. Review of core clauses.\n2. Practical implementation notes.\n3. Swipe attached document for full details.\n\n#Insights #Analysis"
         }
     }
-}
 
 class LinkedInPublishWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
