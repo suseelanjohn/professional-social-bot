@@ -33,7 +33,6 @@ class FolderScanWorker(context: Context, params: WorkerParameters) : CoroutineWo
             val name = file.name ?: continue
             if (file.isDirectory || db.isFileAlreadyProcessed(name)) continue
 
-            // Read actual file content text for deep analysis
             val fileContentText = extractFileTextContent(file.uri)
             val draftedCaption = generateDeepAIContent(name, fileContentText, geminiApiKey)
 
@@ -61,7 +60,7 @@ class FolderScanWorker(context: Context, params: WorkerParameters) : CoroutineWo
                     val sb = StringBuilder()
                     var line: String? = reader.readLine()
                     var linesRead = 0
-                    while (line != null && linesRead < 150) { // Read up to 150 lines of actual text content
+                    while (line != null && linesRead < 150) {
                         sb.append(line).append("\n")
                         line = reader.readLine()
                         linesRead++
@@ -84,14 +83,13 @@ class FolderScanWorker(context: Context, params: WorkerParameters) : CoroutineWo
         }
     }
 
-  private suspend fun generateDeepAIContent(fileName: String, fileContent: String, apiKey: String): String {
+    private suspend fun generateDeepAIContent(fileName: String, fileContent: String, apiKey: String): String {
         if (apiKey.isBlank()) {
             return "Analyzed content from $fileName:\n\nKey takeaways:\n1. Core provisions and statutory updates.\n2. Actionable operational compliance steps.\n3. Detailed breakdown available in attached document.\n\n#Professional #Compliance #Analysis"
         }
 
         return try {
             val model = GenerativeModel(modelName = "gemini-2.5-flash", apiKey = apiKey)
-            // Using clean single-line string concatenation to completely avoid Kotlin parsing / escape token errors
             val prompt = "You are an expert professional content analyst. " +
                     "Read this document content extracted from '$fileName': " +
                     fileContent + " " +
@@ -106,6 +104,7 @@ class FolderScanWorker(context: Context, params: WorkerParameters) : CoroutineWo
             "Insights extracted from $fileName content.\n\n1. Review of core clauses.\n2. Practical implementation notes.\n3. Swipe attached document for full details.\n\n#Insights #Analysis"
         }
     }
+} // <--- This closing brace properly closes FolderScanWord/FolderScanWorker class
 
 class LinkedInPublishWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
